@@ -1,0 +1,97 @@
+AREA HELLO,CODE,READONLY
+ENTRY
+LDR R0,=0X40000000 ; starting address
+LDR R1,=0X4000001C ; storing the results
+LDMIA R0!,{R2-R5} ; load a & b from a+ib in R2 & R3, and c & d from c+id in R4 & R5
+MUL R6,R2,R4 ; product - AC
+MUL R7,R3,R5 ; product - BD
+MUL R8,R2,R5 ; product - DA
+MUL R9,R3,R4 ; product - BC
+MUL R10,R4,R4 ; product - CC
+MUL R11,R5,R5 ; product - DD
+ADD R6,R6,R7 ; sum of real parts of the numerator - ac+bd
+SUB R8,R9,R8 ; difference of img parts of the numerator - bc-da
+ADD R9,R10,R11 ; sum of the denominator terms
+STMIA R1!,{R6,R8,R9}; store the real,img part of numerator & denominator in memory
+MOV R3,#02 ; to compute division for both real and img terms
+LDR R0,=0X4000001C ; Base register address
+LDR R12,=0X4000002C ; result
+LDR R2,[R0] ;real term dividend value to R2
+LDR R4,[R0] ;also store it in R4 for the case where fractional part is involved
+LDR R1,[R0,#08]! ;divisor value to R1
+LDR R0,=0X40000048 ;load flag address in memory
+INI
+MOV R11,#01
+CMP R2,#00
+MVNMI R2,R2 ;if dividend is negative, perform 1's complement for R2 and R4
+MVNMI R4,R4
+ADDMI R2,#1 ;and add 1 to R2 and R4 to get the twos complement in that case
+ADDMI R4,#1
+STRMI R11,[R0] ;store flag=01 if dividend is negative
+CMP R1,#00
+MVNMI R1,R1 ;if divisor is negative, perform 1's complement for R1
+ADDMI R1,#1 ;add 1 to get 2's complement
+STRMI R11,[R0,#04] ;store flag=01 if divisor is negative
+MOV R7,#00 ;reset integer part of quotient
+MOV R10,#00 ;reset fractional part of quotient
+MOV R5,#00 ;reset a total number of digits counter
+MOV R6,#00 ;Quotient
+MOV R8,#0x0A ;R8=10
+TST R1,R1
+BEQ ZER ;if divisor is 0, branch to ZER
+DIV
+SUBS R2,R2,R1 ;Division happens through multiple subtractions
+ADDCS R6,R6,#01 ;To keep the carry count (to get quotient)
+BCS DIV ;loop if carry is set
+ADDS R2,R2,R1 ;This is to correct the remainder by adding R2 with R1
+BNE DEC ;if remainder is not 0 branch to DEC
+OUT
+MOV R11,R5 ;R11=R5
+MOV R1,#0x0A ;r1=10
+POW
+CMP R11,#00 ;check if r5=0
+MULNE R2,R8,R1 ;R2=10*R1 (to get 10^R5)
+MOVNE R1,R2 ;R1=R2
+SUBNE R11,R11,#01
+BNE POW
+CMP R5,#00
+MOVEQ R7,R6 ;if r5=0 then move r6 to r7
+CMP R7,R6 ;if quotient and integer part of quotient are same
+MULNE R9,R7,R8
+SUBNE R10,R6,R9 ;fractional part of quotient=R6-(R7*(10^R5))
+CMP R7,#00 ;if integer part of quotient is zero (dividend<divisor)
+MOVEQ R10,R6 ;fractional part of quotient=r6
+LDR R1,[R0],#04 ;load negative flag corresponding to dividend from memory
+CMP R1,#01
+MVNEQ R7,R7 ;if flag=01 perform 1's complement
+ADDEQ R7,#1 ;to get 2's complement, to reversing sign
+LDR R1,[R0] ;load negative flag corresponding to divisor
+CMP R1,#01
+MVNEQ R7,R7 ;if flag=01 perform 1's complement
+ADDEQ R7,#1 ;to get 2's complement, reversing sign
+EQU STMIA R12!,{R5,R7,R10} ;store number of digits,integer part of quotient,fractional part of
+; quotient respectively
+SUB R3,R3,#01
+CMP R3,#01 ; so that img term calculation also takes place
+BNE UP
+LDR R0,=0X40000020 ; giving the img term as the new address
+LDR R2,[R0] ;load img dividend onto R2
+LDR R4,[R0],#04 ;load it onto R4 as well
+LDR R1,[R0] ;load divisor onto R1
+LDR R0,=0X40000050 ;load flag address in memory for img part
+B INI
+DEC
+CMP R5,#00
+MOVEQ R7,R6 ;move integer part of quotient to r7 when r5 is 0
+MUL R2,R4,R8 ;multiply dividend by 10 and move result to R2
+MOV R4,R2 ;move the new dividend to R4
+ADD R5,R5,#01 ;increment digits counter
+CMP R5,#04 ;(upto 3 decimal accuracy)
+MOVNE R6,#00 ;reset quotient to 0 if div loop has to iterate again
+BNE DIV ;run division loop again if R5-3 is not
+B OUT ;if R5-3=0 stop dividing and proceed to display output
+ZER
+ADDEQ R7,#0XFFFFFFFF;if divisor=0 store this as R7
+B EQU
+UP B UP
+END
